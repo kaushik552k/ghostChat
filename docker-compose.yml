@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: ghostchat-redis
+    ports:
+      - "6379:6379"
+    # Cap Redis at 4GB RAM to prevent VPS starvation
+    command: redis-server --maxmemory 4gb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
