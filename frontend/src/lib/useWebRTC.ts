@@ -42,6 +42,8 @@ export function useWebRTC({ socket, roomId, userName }: UseWebRTCProps) {
     const isCallActiveRef = useRef(false);
     // Ref for callType so socket handlers can read the latest value
     const callTypeRef = useRef<CallType>('video');
+    // Track the callType of the latest incoming call announcement
+    const pendingCallTypeRef = useRef<CallType>('video');
 
     const startLocalMedia = async (type: CallType) => {
         if (localStreamRef.current) return localStreamRef.current;
@@ -263,6 +265,8 @@ export function useWebRTC({ socket, roomId, userName }: UseWebRTCProps) {
                 senderId: payload.senderId,
                 callType: payload.callType || 'video',
             });
+            // Store for handleOffer fallback
+            pendingCallTypeRef.current = payload.callType || 'video';
         };
 
         const handleOffer = (payload: { senderId: string, targetId?: string, signal: SignalData }) => {
@@ -277,7 +281,7 @@ export function useWebRTC({ socket, roomId, userName }: UseWebRTCProps) {
             if (!isCallActiveRef.current) {
                 setIncomingCall(prev => prev ? prev : {
                     senderId: payload.senderId,
-                    callType: 'video',
+                    callType: pendingCallTypeRef.current,
                 });
             }
         };

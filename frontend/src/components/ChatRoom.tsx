@@ -194,38 +194,42 @@ export default function ChatRoom({ roomId, userName, pin, onLeave }: ChatRoomPro
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+                    <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                         <button
                             onClick={() => setShowSidebar(!showSidebar)}
-                            className={`flex h-10 w-10 flex-col items-center justify-center rounded-xl transition-colors ${showSidebar ? 'bg-cyan-500/20 text-cyan-400' : 'bg-zinc-900 text-zinc-400 hover:bg-zinc-800'}`}
+                            className={`flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl transition-colors ${showSidebar ? 'bg-cyan-500/20 text-cyan-400' : 'bg-zinc-900 text-zinc-400 hover:bg-zinc-800'}`}
                             title="Active Users"
                         >
-                            <Users size={18} />
+                            <Users size={16} className="sm:hidden" />
+                            <Users size={18} className="hidden sm:block" />
                         </button>
 
                         {/* Audio Call Button */}
                         <button
                             onClick={() => initiateCall('audio')}
                             disabled={isCallActive}
-                            className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors ${isCallActive ? 'bg-zinc-900 border border-zinc-800 text-zinc-600 cursor-not-allowed' : 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-600'}`}
+                            className={`flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl transition-colors ${isCallActive ? 'bg-zinc-900 border border-zinc-800 text-zinc-600 cursor-not-allowed' : 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-600'}`}
                             title="Audio Call"
                         >
-                            <Phone size={18} />
+                            <Phone size={16} className="sm:hidden" />
+                            <Phone size={18} className="hidden sm:block" />
                         </button>
 
                         {/* Video Call Button */}
                         <button
                             onClick={() => initiateCall('video')}
                             disabled={isCallActive}
-                            className={`flex h-10 px-4 items-center justify-center gap-2 rounded-xl transition-colors ${isCallActive ? 'bg-zinc-900 border border-zinc-800 text-zinc-600 cursor-not-allowed' : 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/20 hover:bg-cyan-600'}`}
+                            className={`flex h-9 w-9 sm:h-10 sm:w-10 sm:px-4 sm:w-auto items-center justify-center gap-2 rounded-xl transition-colors ${isCallActive ? 'bg-zinc-900 border border-zinc-800 text-zinc-600 cursor-not-allowed' : 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/20 hover:bg-cyan-600'}`}
                             title="Video Call"
                         >
-                            <Video size={18} /> <span className="hidden sm:inline text-sm font-medium">Video</span>
+                            <Video size={16} className="sm:hidden" />
+                            <Video size={18} className="hidden sm:block" />
+                            <span className="hidden sm:inline text-sm font-medium">Video</span>
                         </button>
 
                         <button
                             onClick={onLeave}
-                            className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-500/10 text-red-500 transition-colors hover:bg-red-500/20"
+                            className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-red-500/10 text-red-500 transition-colors hover:bg-red-500/20"
                             title="Leave Room"
                         >
                             <LogOut size={16} />
