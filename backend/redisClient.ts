@@ -32,11 +32,31 @@ export const ephemeralListPush = async (listKey: string, payload: string) => {
 };
 
 export const ephemeralGet = async (key: string) => {
-    return await redis.get(key);
+  return await redis.get(key);
 };
 
-export const ephemeralListGet = async (listKey: string, start=0, end=-1) => {
-    return await redis.lrange(listKey, start, end);
+export const ephemeralListGet = async (listKey: string, start = 0, end = -1) => {
+  return await redis.lrange(listKey, start, end);
+};
+
+export const ephemeralDelete = async (key: string | string[]) => {
+  return await redis.del(key);
+}
+
+// Sets methods for tracking participants
+export const ephemeralSetAdd = async (setKey: string, member: string) => {
+  const pipeline = redis.pipeline();
+  pipeline.sadd(setKey, member);
+  pipeline.expire(setKey, 3600);
+  await pipeline.exec();
+};
+
+export const ephemeralSetRemove = async (setKey: string, member: string) => {
+  await redis.srem(setKey, member);
+};
+
+export const ephemeralSetMembers = async (setKey: string) => {
+  return await redis.smembers(setKey);
 };
 
 export default redis;

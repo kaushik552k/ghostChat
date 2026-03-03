@@ -2,7 +2,7 @@ import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
-import { ephemeralListPush, ephemeralSet, ephemeralListGet } from './redisClient';
+import { ephemeralListPush, ephemeralSet, ephemeralListGet, ephemeralGet, ephemeralDelete, ephemeralSetAdd, ephemeralSetRemove, ephemeralSetMembers } from './redisClient';
 
 const app = express();
 app.use(cors());
@@ -30,19 +30,100 @@ interface SignalData {
     signal: any;
 }
 
+// Track socket ID to room & user name mapping dynamically in memory
+const activeClients = new Map<string, { roomId: string, userName: string }>();
+
+const handleUserLeave = async (socketId: string) => {
+    const clientRef = activeClients.get(socketId);
+    if (!clientRef) return;
+
+    const { roomId, userName } = clientRef;
+    activeClients.delete(socketId);
+
+    // Remove from Redis set
+    await ephemeralSetRemove(`room_users:${roomId}`, userName);
+
+    // Notify others that this user left
+    io.to(roomId).emit('user-left', { userName });
+
+    // Broadcast new users list
+    const remainingUsers = await ephemeralSetMembers(`room_users:${roomId}`);
+    io.to(roomId).emit('room-users-update', remainingUsers);
+
+    // Check if Admin
+    const currentAdmin = await ephemeralGet(`room_admin:${roomId}`);
+    if (currentAdmin === userName) {
+        console.log(`[Socket] Admin ${userName} left. Destroying room ${roomId}.`);
+        // Destroy the entire room
+        io.to(roomId).emit('room-destroyed');
+        await ephemeralDelete([
+            `room_pin:${roomId}`,
+            `room_admin:${roomId}`,
+            `room_active:${roomId}`,
+            `room_msgs:${roomId}`,
+            `room_users:${roomId}`
+        ]);
+        // Force remaining sockets to leave
+        const socketsInRoom = await io.in(roomId).fetchSockets();
+        for (const s of socketsInRoom) {
+            s.leave(roomId);
+        }
+    }
+};
+
 io.on('connection', (socket) => {
     console.log(`[Socket] User connected: ${socket.id}`);
 
-    socket.on('join-room', async (roomId: string) => {
-        socket.join(roomId);
-        console.log(`[Socket] ${socket.id} joined room ${roomId}`);
+    socket.on('join-room', async ({ roomId, userName, pin }: { roomId: string, userName: string, pin: string }) => {
+        const existingPin = await ephemeralGet(`room_pin:${roomId}`);
 
-        // Register the room's access actively to keep alive temporarily
+        if (existingPin) {
+            if (existingPin !== pin) {
+                socket.emit('join-error', { message: 'Incorrect Room PIN.' });
+                return;
+            }
+        } else {
+            await ephemeralSet(`room_pin:${roomId}`, pin);
+            await ephemeralSet(`room_admin:${roomId}`, userName);
+            console.log(`[Socket] Room ${roomId} created by ${userName} with PIN ${pin}`);
+        }
+
+        socket.join(roomId);
+        activeClients.set(socket.id, { roomId, userName });
+        console.log(`[Socket] ${socket.id} (${userName}) joined room ${roomId}`);
+
+        const currentAdmin = await ephemeralGet(`room_admin:${roomId}`);
+        socket.emit('join-success', { isAdmin: currentAdmin === userName, adminUser: currentAdmin });
+
+        // Record active participant in the room's users set
+        await ephemeralSetAdd(`room_users:${roomId}`, userName);
         await ephemeralSet(`room_active:${roomId}`, Date.now().toString());
+
+        // Broadcast active members list to everyone
+        const activeUsers = await ephemeralSetMembers(`room_users:${roomId}`);
+        io.to(roomId).emit('room-users-update', activeUsers);
+
+        // Notify others that this user joined
+        socket.to(roomId).emit('user-joined', { userName });
 
         // Fetch existing messages from the Redis List for this room
         const messages = await ephemeralListGet(`room_msgs:${roomId}`);
         socket.emit('room-history', messages.map(m => JSON.parse(m)));
+    });
+
+    socket.on('leave-room', async (roomId: string) => {
+        await handleUserLeave(socket.id);
+        socket.leave(roomId);
+        console.log(`[Socket] ${socket.id} left room ${roomId}`);
+    });
+
+    // Typing indicator relay
+    socket.on('typing', (data: { roomId: string, userName: string }) => {
+        socket.to(data.roomId).emit('typing', { userName: data.userName });
+    });
+
+    socket.on('stop-typing', (data: { roomId: string, userName: string }) => {
+        socket.to(data.roomId).emit('stop-typing', { userName: data.userName });
     });
 
     socket.on('send-message', async (payload: ChatMessagePayload) => {
@@ -72,8 +153,17 @@ io.on('connection', (socket) => {
         socket.to(data.roomId).emit('webrtc-rejected', data);
     });
 
-    socket.on('disconnect', () => {
+    socket.on('webrtc-call-ended', (data: { roomId: string, senderId: string }) => {
+        socket.to(data.roomId).emit('webrtc-call-ended', data);
+    });
+
+    socket.on('webrtc-call-start', (data: { roomId: string, senderId: string }) => {
+        socket.to(data.roomId).emit('webrtc-call-start', data);
+    });
+
+    socket.on('disconnect', async () => {
         console.log(`Socket disconnected: ${socket.id}`);
+        await handleUserLeave(socket.id);
     });
 });
 
