@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useChatSocket } from '@/lib/useChatSocket';
 import { useWebRTC } from '@/lib/useWebRTC';
-import { Send, Video, VideoOff, Phone, PhoneOff, Mic, MicOff, LogOut, Users, Crown, MessageCircle } from 'lucide-react';
+import { Send, Video, VideoOff, Phone, PhoneOff, Mic, MicOff, LogOut, Users, Crown } from 'lucide-react';
+import { BlinkLogo } from '@/components/BlinkLogo';
 import { toast } from 'sonner';
 
 interface ChatRoomProps {
@@ -137,7 +138,7 @@ export default function ChatRoom({ roomId, userName, pin, onLeave }: ChatRoomPro
         <div className="flex h-screen w-full bg-zinc-950 font-sans text-zinc-100 relative overflow-hidden">
 
             {/* Main Chat Area */}
-            <div className={`flex flex-col h-full transition-all duration-300 ${showSidebar ? 'w-[75%]' : 'w-full'}`}>
+            <div className="flex flex-col h-full w-full">
                 {/* Incoming Call Overlay */}
                 <AnimatePresence>
                     {incomingCall && !isCallActive && (
@@ -173,14 +174,13 @@ export default function ChatRoom({ roomId, userName, pin, onLeave }: ChatRoomPro
                 </AnimatePresence>
 
                 {/* Header — Blink Branding */}
-                <header className="flex h-16 shrink-0 items-center justify-between border-b border-zinc-900 bg-zinc-950/80 px-4 sm:px-6 backdrop-blur-md">
-                    <div className="flex items-center gap-4">
+                <header className="flex h-14 sm:h-16 shrink-0 items-center justify-between border-b border-zinc-900 bg-zinc-950/80 px-3 sm:px-6 backdrop-blur-md">
+                    <div className="flex items-center gap-2 sm:gap-4 min-w-0">
                         <motion.div
                             initial={{ scale: 0 }}
                             animate={{ scale: 1 }}
-                            className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-500 shadow-lg shadow-cyan-500/20"
                         >
-                            <MessageCircle size={18} className="text-white" />
+                            <BlinkLogo size={36} />
                         </motion.div>
                         <div>
                             <h1 className="text-lg font-bold tracking-tight truncate max-w-[120px] sm:max-w-none">Room: <span className="text-cyan-400">{roomId}</span></h1>
@@ -188,7 +188,7 @@ export default function ChatRoom({ roomId, userName, pin, onLeave }: ChatRoomPro
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
                         <button
                             onClick={() => setShowSidebar(!showSidebar)}
                             className={`flex h-10 w-10 flex-col items-center justify-center rounded-xl transition-colors ${showSidebar ? 'bg-cyan-500/20 text-cyan-400' : 'bg-zinc-900 text-zinc-400 hover:bg-zinc-800'}`}
@@ -222,7 +222,7 @@ export default function ChatRoom({ roomId, userName, pin, onLeave }: ChatRoomPro
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: 'auto', opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
-                            className="border-b border-zinc-900 bg-zinc-950 p-4"
+                            className="border-b border-zinc-900 bg-zinc-950 p-2 sm:p-4"
                         >
                             <div className={`grid gap-3 ${gridCols}`}>
                                 {remoteStreamEntries.map(([peerId, stream]) => (
@@ -239,14 +239,14 @@ export default function ChatRoom({ roomId, userName, pin, onLeave }: ChatRoomPro
                                     <span className="absolute bottom-3 left-3 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-white backdrop-blur">You</span>
                                 </div>
                             </div>
-                            <div className="flex justify-center gap-3 mt-4">
-                                <button onClick={toggleVideo} className={`flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-xs font-semibold transition-all ${isVideoMuted ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>
+                            <div className="flex flex-wrap justify-center gap-2 sm:gap-3 mt-3 sm:mt-4">
+                                <button onClick={toggleVideo} className={`flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-5 py-2 sm:py-2.5 text-xs font-semibold transition-all ${isVideoMuted ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>
                                     {isVideoMuted ? <VideoOff size={16} /> : <Video size={16} />} Camera
                                 </button>
-                                <button onClick={toggleAudio} className={`flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-xs font-semibold transition-all ${isAudioMuted ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>
+                                <button onClick={toggleAudio} className={`flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-5 py-2 sm:py-2.5 text-xs font-semibold transition-all ${isAudioMuted ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'}`}>
                                     {isAudioMuted ? <MicOff size={16} /> : <Mic size={16} />} Mic
                                 </button>
-                                <button onClick={endCall} className="flex items-center justify-center gap-2 rounded-xl bg-red-500 px-5 py-2.5 text-xs font-semibold text-white transition-all hover:bg-red-600 shadow-lg shadow-red-500/20">
+                                <button onClick={endCall} className="flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl bg-red-500 px-3 sm:px-5 py-2 sm:py-2.5 text-xs font-semibold text-white transition-all hover:bg-red-600 shadow-lg shadow-red-500/20">
                                     <PhoneOff size={16} /> End Call
                                 </button>
                             </div>
@@ -309,13 +309,13 @@ export default function ChatRoom({ roomId, userName, pin, onLeave }: ChatRoomPro
                 </AnimatePresence>
 
                 {/* Input Area */}
-                <div className="mx-auto w-full max-w-4xl p-4 sm:pb-8">
+                <div className="mx-auto w-full max-w-4xl p-3 sm:p-4 sm:pb-8 pb-safe">
                     <form onSubmit={submit} className="relative flex w-full items-center">
                         <input
                             value={text}
                             onChange={handleInputChange}
                             placeholder="Type a message..."
-                            className="h-14 w-full rounded-2xl border border-zinc-800 bg-zinc-900/50 pl-6 pr-14 text-zinc-100 placeholder-zinc-500 shadow-inner backdrop-blur focus:border-cyan-500/50 focus:outline-none focus:ring-4 focus:ring-cyan-500/10 transition-all"
+                            className="h-12 sm:h-14 w-full rounded-2xl border border-zinc-800 bg-zinc-900/50 pl-4 sm:pl-6 pr-12 sm:pr-14 text-zinc-100 placeholder-zinc-500 shadow-inner backdrop-blur focus:border-cyan-500/50 focus:outline-none focus:ring-4 focus:ring-cyan-500/10 transition-all text-sm sm:text-base"
                         />
                         <button
                             type="submit"
@@ -336,11 +336,16 @@ export default function ChatRoom({ roomId, userName, pin, onLeave }: ChatRoomPro
                         animate={{ x: 0 }}
                         exit={{ x: "100%" }}
                         transition={{ type: "spring", bounce: 0, duration: 0.4 }}
-                        className="absolute right-0 top-0 bottom-0 w-[25%] min-w-[220px] border-l border-zinc-900 bg-zinc-950/95 backdrop-blur-xl p-6 z-40 shadow-2xl"
+                        className="absolute right-0 top-0 bottom-0 w-full sm:w-[280px] border-l border-zinc-900 bg-zinc-950/98 backdrop-blur-xl p-5 sm:p-6 z-40 shadow-2xl"
                     >
-                        <div className="flex items-center gap-3 mb-8">
-                            <Users className="text-cyan-400" size={20} />
-                            <h2 className="text-lg font-bold">Active Members</h2>
+                        <div className="flex items-center justify-between mb-8">
+                            <div className="flex items-center gap-3">
+                                <Users className="text-cyan-400" size={20} />
+                                <h2 className="text-lg font-bold">Active Members</h2>
+                            </div>
+                            <button onClick={() => setShowSidebar(false)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-900 text-zinc-400 hover:bg-zinc-800 sm:hidden">
+                                ✕
+                            </button>
                         </div>
                         <ul className="flex flex-col gap-3">
                             {activeUsers.length === 0 && <li className="text-sm text-zinc-600 italic">No one else here...</li>}

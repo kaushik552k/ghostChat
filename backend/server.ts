@@ -75,17 +75,55 @@ io.on('connection', (socket) => {
     console.log(`[Socket] User connected: ${socket.id}`);
 
     socket.on('join-room', async ({ roomId, userName, pin }: { roomId: string, userName: string, pin: string }) => {
-        const existingPin = await ephemeralGet(`room_pin:${roomId}`);
+        // --- Server-side validation ---
+        if (!roomId || !userName || !pin) {
+            socket.emit('join-error', { message: 'All fields are required.' });
+            return;
+        }
+        const trimName = userName.trim();
+        const trimRoom = roomId.trim();
+        const trimPin = pin.trim();
+
+        if (trimName.length < 2 || trimName.length > 20) {
+            socket.emit('join-error', { message: 'Display name must be 2-20 characters.' });
+            return;
+        }
+        if (!/^[a-zA-Z0-9_\- ]+$/.test(trimName)) {
+            socket.emit('join-error', { message: 'Display name contains invalid characters.' });
+            return;
+        }
+        if (trimRoom.length < 3 || trimRoom.length > 30) {
+            socket.emit('join-error', { message: 'Room ID must be 3-30 characters.' });
+            return;
+        }
+        if (!/^[a-zA-Z0-9_\-]+$/.test(trimRoom)) {
+            socket.emit('join-error', { message: 'Room ID can only contain letters, numbers, hyphens, and underscores.' });
+            return;
+        }
+        if (!/^\d{4,8}$/.test(trimPin)) {
+            socket.emit('join-error', { message: 'PIN must be a 4-8 digit number.' });
+            return;
+        }
+
+        // Check if username is already taken in this room
+        const existingUsers = await ephemeralSetMembers(`room_users:${trimRoom}`);
+        if (existingUsers.includes(trimName)) {
+            socket.emit('join-error', { message: `"${trimName}" is already in this room. Choose a different name.` });
+            return;
+        }
+
+        // --- PIN check ---
+        const existingPin = await ephemeralGet(`room_pin:${trimRoom}`);
 
         if (existingPin) {
-            if (existingPin !== pin) {
+            if (existingPin !== trimPin) {
                 socket.emit('join-error', { message: 'Incorrect Room PIN.' });
                 return;
             }
         } else {
-            await ephemeralSet(`room_pin:${roomId}`, pin);
-            await ephemeralSet(`room_admin:${roomId}`, userName);
-            console.log(`[Socket] Room ${roomId} created by ${userName} with PIN ${pin}`);
+            await ephemeralSet(`room_pin:${trimRoom}`, trimPin);
+            await ephemeralSet(`room_admin:${trimRoom}`, trimName);
+            console.log(`[Socket] Room ${trimRoom} created by ${trimName} with PIN`);
         }
 
         socket.join(roomId);
