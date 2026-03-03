@@ -191,12 +191,19 @@ io.on('connection', (socket) => {
         socket.to(data.roomId).emit('webrtc-rejected', data);
     });
 
-    socket.on('webrtc-call-ended', (data: { roomId: string, senderId: string }) => {
+    socket.on('webrtc-call-ended', (data: { roomId: string, senderId: string, callType?: string }) => {
         socket.to(data.roomId).emit('webrtc-call-ended', data);
     });
 
-    socket.on('webrtc-call-start', (data: { roomId: string, senderId: string }) => {
+    socket.on('webrtc-call-start', (data: { roomId: string, senderId: string, callType?: string }) => {
         socket.to(data.roomId).emit('webrtc-call-start', data);
+    });
+
+    // Call event system messages (stored in chat history)
+    socket.on('call-event', async (payload: { roomId: string, text: string, timestamp: number }) => {
+        const sysMsg = { roomId: payload.roomId, senderId: '__system__', text: payload.text, timestamp: payload.timestamp };
+        await ephemeralListPush(`room_msgs:${payload.roomId}`, JSON.stringify(sysMsg));
+        io.to(payload.roomId).emit('receive-message', sysMsg);
     });
 
     socket.on('disconnect', async () => {

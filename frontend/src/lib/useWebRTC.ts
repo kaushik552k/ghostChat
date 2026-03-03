@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import Peer, { Instance, SignalData } from 'simple-peer';
 import { Socket } from 'socket.io-client';
 
+export type CallType = 'audio' | 'video';
+
 interface UseWebRTCProps {
     socket: Socket | null;
     roomId: string;
@@ -9,41 +11,45 @@ interface UseWebRTCProps {
 }
 
 /**
- * Multi-peer mesh WebRTC hook.
+ * Multi-peer mesh WebRTC hook with audio/video call support.
  *
  * Call flow:
- * 1. User A clicks "Video" → starts local media, emits `webrtc-call-start`
- * 2. Other users see incoming call dialog.
- * 3. User B clicks "Accept" → starts local media, creates INITIATOR peer
- *    targeting A, sends `webrtc-offer` with targetId=A.
- * 4. A receives the offer → creates NON-INITIATOR peer for B, answers.
- * 5. If user C also accepts, C creates initiator peer for A.
- *    B's acceptCall also emits call-start, so A and B both know about each new joiner.
+ * 1. User A clicks "Video" or "Audio" → starts media, emits `webrtc-call-start`
+ *    with callType.
+ * 2. Other users see incoming call dialog showing call type.
+ * 3. User B clicks "Accept" → starts appropriate media, emits `webrtc-call-start`.
+ * 4. Existing in-call users create INITIATOR peers to the new joiner.
+ * 5. The new joiner's handleOffer auto-creates RESPONDER peers.
  *
  * IMPORTANT: We use `isCallActiveRef` (a ref) instead of `isCallActive` (state)
- * inside socket handlers to avoid stale closure issues. The ref is updated
- * synchronously and always reflects the latest value.
+ * inside socket handlers to avoid stale closure issues.
  */
 export function useWebRTC({ socket, roomId, userName }: UseWebRTCProps) {
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
     const [isCallActive, setIsCallActive] = useState(false);
-    const [incomingCall, setIncomingCall] = useState<{ senderId: string } | null>(null);
+    const [callType, setCallType] = useState<CallType>('video');
+    const [incomingCall, setIncomingCall] = useState<{ senderId: string; callType: CallType } | null>(null);
     const [isVideoMuted, setIsVideoMuted] = useState(false);
     const [isAudioMuted, setIsAudioMuted] = useState(false);
 
     const peersRef = useRef<Map<string, Instance>>(new Map());
     const localStreamRef = useRef<MediaStream | null>(null);
     const callParticipantsRef = useRef<Set<string>>(new Set());
+    const callStartTimeRef = useRef<number>(0);
 
-    // *** KEY FIX: synchronous ref mirrors the isCallActive state ***
-    // Socket handlers read this ref instead of the state, avoiding stale closures.
+    // Synchronous ref mirrors the isCallActive state
     const isCallActiveRef = useRef(false);
+    // Ref for callType so socket handlers can read the latest value
+    const callTypeRef = useRef<CallType>('video');
 
-    const startLocalMedia = async () => {
+    const startLocalMedia = async (type: CallType) => {
         if (localStreamRef.current) return localStreamRef.current;
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            const constraints = type === 'audio'
+                ? { audio: true, video: false }
+                : { audio: true, video: true };
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
             setLocalStream(stream);
             localStreamRef.current = stream;
             return stream;
@@ -73,7 +79,21 @@ export function useWebRTC({ socket, roomId, userName }: UseWebRTCProps) {
         });
     }, []);
 
+    /** Format seconds into M:SS */
+    const formatDuration = (ms: number) => {
+        const totalSec = Math.floor(ms / 1000);
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec % 60;
+        return `${m}:${s.toString().padStart(2, '0')}`;
+    };
+
     const endCall = useCallback(() => {
+        // Calculate duration
+        const duration = callStartTimeRef.current
+            ? Date.now() - callStartTimeRef.current
+            : 0;
+        const typeLabel = callTypeRef.current === 'audio' ? '📞 Audio Call' : '📹 Video Call';
+
         peersRef.current.forEach((peer) => {
             if (!peer.destroyed) peer.destroy();
         });
@@ -82,12 +102,22 @@ export function useWebRTC({ socket, roomId, userName }: UseWebRTCProps) {
         setRemoteStreams(new Map());
 
         if (socket) {
-            socket.emit('webrtc-call-ended', { roomId, senderId: userName });
+            socket.emit('webrtc-call-ended', { roomId, senderId: userName, callType: callTypeRef.current });
+
+            // Emit call-ended system message
+            if (duration > 0) {
+                socket.emit('call-event', {
+                    roomId,
+                    text: `${typeLabel} ended • ${formatDuration(duration)}`,
+                    timestamp: Date.now(),
+                });
+            }
         }
 
         stopLocalMedia();
         setIsCallActive(false);
         isCallActiveRef.current = false;
+        callStartTimeRef.current = 0;
         setIncomingCall(null);
         setIsVideoMuted(false);
         setIsAudioMuted(false);
@@ -145,38 +175,48 @@ export function useWebRTC({ socket, roomId, userName }: UseWebRTCProps) {
         callParticipantsRef.current.add(targetId);
     }, [socket, roomId, userName, removePeer]);
 
-    /** Initiator: announce call to the room (no peer created yet) */
-    const initiateCall = useCallback(async () => {
+    /** Initiator: announce call to the room */
+    const initiateCall = useCallback(async (type: CallType) => {
         if (!socket) return;
-        const stream = await startLocalMedia();
+        const stream = await startLocalMedia(type);
         if (!stream) return;
 
-        // Update BOTH state and ref synchronously
+        setCallType(type);
+        callTypeRef.current = type;
         setIsCallActive(true);
         isCallActiveRef.current = true;
         callParticipantsRef.current.clear();
+        callStartTimeRef.current = Date.now();
 
-        // Broadcast "I'm starting a call" — peers are created when others accept
-        socket.emit('webrtc-call-start', { roomId, senderId: userName });
+        // Emit call-started system message
+        const typeLabel = type === 'audio' ? '📞 Audio Call' : '📹 Video Call';
+        socket.emit('call-event', {
+            roomId,
+            text: `${userName} started a ${typeLabel}`,
+            timestamp: Date.now(),
+        });
+
+        socket.emit('webrtc-call-start', { roomId, senderId: userName, callType: type });
     }, [socket, roomId, userName]);
 
-    /** Accept an incoming call — announce ourselves, let existing users initiate to us */
+    /** Accept an incoming call */
     const acceptCall = useCallback(async () => {
         if (!socket || !incomingCall) return;
 
-        // Update BOTH state and ref synchronously
+        const type = incomingCall.callType || 'video';
+        setCallType(type);
+        callTypeRef.current = type;
         setIsCallActive(true);
         isCallActiveRef.current = true;
+        callStartTimeRef.current = Date.now();
 
-        const stream = await startLocalMedia();
+        const stream = await startLocalMedia(type);
         if (!stream) return;
 
         setIncomingCall(null);
 
         // Announce ourselves — existing in-call users will create INITIATOR peers to us
-        // via handleCallStart. Our handleOffer will auto-create RESPONDER peers.
-        // This avoids the dual-initiator deadlock.
-        socket.emit('webrtc-call-start', { roomId, senderId: userName });
+        socket.emit('webrtc-call-start', { roomId, senderId: userName, callType: type });
     }, [socket, incomingCall, roomId, userName]);
 
     const rejectCall = useCallback(() => {
@@ -206,39 +246,39 @@ export function useWebRTC({ socket, roomId, userName }: UseWebRTCProps) {
         }
     }, []);
 
-    // Register socket handlers ONCE (no isCallActive dependency!)
-    // Handlers use isCallActiveRef.current for the latest value.
+    // Register socket handlers ONCE
     useEffect(() => {
         if (!socket) return;
 
-        const handleCallStart = (payload: { senderId: string }) => {
+        const handleCallStart = (payload: { senderId: string; callType?: CallType }) => {
             if (payload.senderId === userName) return;
 
-            // Use REF, not state — always up-to-date
             if (isCallActiveRef.current && localStreamRef.current) {
-                // Already in a call — connect to this new joiner
                 if (!peersRef.current.has(payload.senderId)) {
                     createPeerTo(payload.senderId, true, localStreamRef.current);
                 }
                 return;
             }
-            // Not in a call — show incoming call dialog (don't overwrite existing)
-            setIncomingCall(prev => prev ? prev : { senderId: payload.senderId });
+            setIncomingCall(prev => prev ? prev : {
+                senderId: payload.senderId,
+                callType: payload.callType || 'video',
+            });
         };
 
         const handleOffer = (payload: { senderId: string, targetId?: string, signal: SignalData }) => {
             if (payload.senderId === userName) return;
             if (payload.targetId && payload.targetId !== userName) return;
 
-            // Use REF for latest call state
             if (isCallActiveRef.current && localStreamRef.current) {
                 createPeerTo(payload.senderId, false, localStreamRef.current, payload.signal);
                 return;
             }
 
-            // Not in a call — show dialog
             if (!isCallActiveRef.current) {
-                setIncomingCall(prev => prev ? prev : { senderId: payload.senderId });
+                setIncomingCall(prev => prev ? prev : {
+                    senderId: payload.senderId,
+                    callType: 'video',
+                });
             }
         };
 
@@ -278,6 +318,7 @@ export function useWebRTC({ socket, roomId, userName }: UseWebRTCProps) {
                 stopLocalMedia();
                 setIsCallActive(false);
                 isCallActiveRef.current = false;
+                callStartTimeRef.current = 0;
                 setIsVideoMuted(false);
                 setIsAudioMuted(false);
             }
@@ -298,13 +339,13 @@ export function useWebRTC({ socket, roomId, userName }: UseWebRTCProps) {
             socket.off('webrtc-rejected', handleRejected);
             socket.off('webrtc-call-ended', handleCallEnded);
         };
-        // Removed isCallActive from deps — we use the ref now
     }, [socket, userName, createPeerTo, removePeer, endCall, stopLocalMedia]);
 
     return {
         localStream,
         remoteStreams,
         isCallActive,
+        callType,
         incomingCall,
         isVideoMuted,
         isAudioMuted,
