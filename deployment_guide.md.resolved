@@ -1,0 +1,234 @@
+# 🚀 Blink — Deployment Guide for `chat.kaushikcodes.in`
+
+## 📋 Container Reference
+
+| Component       | Service Name | Container Name   | Internal Port |
+|:----------------|:-------------|:-----------------|:--------------|
+| **Next.js App** | `frontend`   | `blink-frontend` | 3000          |
+| **Backend API** | `backend`    | `blink-backend`  | 4000          |
+| **Redis**       | `redis`      | `blink-redis`    | 6379          |
+| **Nginx**       | `nginx`      | `blink-gateway`  | 80/443        |
+
+---
+
+## 🔧 Step 1: DNS Setup
+
+Add an **A record** for `chat.kaushikcodes.in` pointing to your VPS IP.
+
+```
+Type: A
+Name: chat
+Value: <your-vps-ip>
+TTL: 300
+```
+
+Wait for DNS to propagate (5-10 minutes). Verify with:
+```bash
+dig chat.kaushikcodes.in
+```
+
+---
+
+## 📂 Step 2: Clone to VPS
+
+```bash
+ssh your-user@your-vps-ip
+cd ~
+git clone https://github.com/your-username/ghostChat.git blink-chat
+cd blink-chat
+```
+
+---
+
+## 🔒 Step 3: Get SSL Certificate
+
+Since your blog's nginx already uses ports 80/443, temporarily stop it to get the certificate:
+
+```bash
+# Stop the blog's nginx
+cd ~/my-blog
+docker stop kaushik-gateway
+
+# Get SSL cert for chat subdomain
+sudo certbot certonly --standalone -d chat.kaushikcodes.in
+
+# Restart blog's nginx
+docker start kaushik-gateway
+```
+
+---
+
+## 🌐 Step 4: Update Blog's Nginx to Proxy the Chat Subdomain
+
+Since your blog's `kaushik-gateway` controls ports 80/443, you need to add a server block for `chat.kaushikcodes.in` in the blog's nginx config.
+
+**Edit your blog's nginx config** (e.g., `~/my-blog/nginx/nginx.conf`) and **add** these blocks:
+
+```nginx
+# WebSocket upgrade map (add at top of file if not present)
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+# === BLINK CHAT APP ===
+server {
+    listen 80;
+    server_name chat.kaushikcodes.in;
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name chat.kaushikcodes.in;
+
+    ssl_certificate /etc/letsencrypt/live/chat.kaushikcodes.in/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/chat.kaushikcodes.in/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # Frontend
+    location / {
+        proxy_pass http://host.docker.internal:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Socket.IO (WebSocket)
+    location /socket.io/ {
+        proxy_pass http://host.docker.internal:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400;
+        proxy_send_timeout 86400;
+    }
+}
+```
+
+> [!IMPORTANT]
+> If `host.docker.internal` doesn't work on your Linux VPS, replace it with your VPS's internal IP (run `hostname -I` to find it), or use `172.17.0.1` (Docker's default host gateway).
+
+Then reload the blog's nginx:
+```bash
+docker restart kaushik-gateway
+```
+
+---
+
+## 🔨 Step 5: Build & Start Blink
+
+```bash
+cd ~/blink-chat
+
+# Build and start all services
+docker compose up -d --build
+
+# Verify all 4 containers are running
+docker compose ps
+```
+
+Expected output:
+```
+NAME             STATUS
+blink-redis      Up
+blink-backend    Up
+blink-frontend   Up
+blink-gateway    Up
+```
+
+---
+
+## ✅ Step 6: Verify
+
+1. Open `https://chat.kaushikcodes.in` in your browser
+2. Create a room and join from another browser/tab
+3. Test messaging, typing indicators, and video calls
+
+---
+
+## 🔄 Updating After Code Changes
+
+```bash
+cd ~/blink-chat
+git pull origin main
+docker compose up -d --build
+```
+
+> [!NOTE]
+> The `NEXT_PUBLIC_SOCKET_URL` is baked at build time. If you change it in [docker-compose.yml](file:///c:/Users/Kaushik%20Dutta/Desktop/deployed-project/ghostChat/docker-compose.yml), you must rebuild: `docker compose build --no-cache frontend`
+
+---
+
+## 🔍 Monitoring & Logs
+
+```bash
+# All logs
+docker compose logs -f
+
+# Specific service
+docker compose logs -f backend
+docker compose logs -f frontend
+
+# Container status
+docker compose ps
+
+# Resource usage
+docker stats blink-frontend blink-backend blink-redis blink-gateway
+```
+
+---
+
+## 🛠️ Troubleshooting
+
+### WebSocket connection fails
+```bash
+# Check backend logs
+docker compose logs backend
+
+# Verify nginx is proxying correctly
+curl -i https://chat.kaushikcodes.in/socket.io/?EIO=4&transport=polling
+```
+
+### Redis connection error
+```bash
+docker compose logs redis
+docker compose restart backend
+```
+
+### SSL certificate renewal
+```bash
+# Stop blog's nginx temporarily
+docker stop kaushik-gateway
+
+# Renew
+sudo certbot renew
+
+# Restart everything
+docker start kaushik-gateway
+docker restart blink-gateway
+```
+
+### Full restart
+```bash
+cd ~/blink-chat
+docker compose down
+docker compose up -d
+```
+
+---
+
+## 🧹 Cleanup
+
+```bash
+# Remove unused Docker resources
+docker system prune -f
+```

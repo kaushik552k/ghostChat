@@ -32,21 +32,21 @@ services:
     networks:
       - blink-net
 
-  nginx:
-    image: nginx:alpine
-    container_name: blink-gateway
-    ports:
-      - "8080:80"
-      - "8443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-    depends_on:
-      - frontend
-      - backend
-    restart: unless-stopped
-    networks:
-      - blink-net
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: blink-gateway
+  #   ports:
+  #     - "8080:80"
+  #     - "8443:443"
+  #   volumes:
+  #     - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+  #     - /etc/letsencrypt:/etc/letsencrypt:ro
+  #   depends_on:
+  #     - frontend
+  #     - backend
+  #   restart: unless-stopped
+  #   networks:
+  #     - blink-net
 
 networks:
   blink-net:
