@@ -35,7 +35,8 @@ export function useChatSocket(
     useEffect(() => {
         if (!roomId || !pin) return;
 
-        const socket = io('http://localhost:4000');
+        const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:4000';
+        const socket = io(socketUrl);
         socketRef.current = socket;
 
         socket.on('connect', () => {

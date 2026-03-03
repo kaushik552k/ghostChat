@@ -205,7 +205,7 @@ io.on('connection', (socket) => {
     });
 });
 
-const PORT = 4000;
+const PORT = parseInt(process.env.PORT || '4000');
 server.listen(PORT, () => {
     console.log(`Signaling server running on port ${PORT}`);
 });
